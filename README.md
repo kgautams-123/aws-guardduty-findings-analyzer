@@ -25,7 +25,7 @@ The solution consists of the following AWS components:
 
 1. Clone this repository:
    ```
-   git clone https://github.com/your-username/guardduty-findings-analyzer.git
+   git clone https://github.com/kgautams-123/aws-guardduty-findings-analyzer.git
    cd guardduty-findings-analyzer
    ```
 

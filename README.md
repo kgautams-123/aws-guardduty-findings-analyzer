@@ -14,6 +14,7 @@ The solution consists of the following AWS components:
 4. Amazon Bedrock: Analyzes and summarizes the findings using the Claude 3.5 Sonnet model
 5. Amazon SNS: Sends email notifications with the summarized findings
 
+![Architecture Diagram](Architecture.png)
 ## Prerequisites
 
 - An AWS account with permissions to create and manage the required services

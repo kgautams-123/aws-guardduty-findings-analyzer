@@ -1,0 +1,212 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for processing GuardDuty findings using Claude 3.5 Sonnet'
+
+Parameters:
+  EmailAddress:
+    Type: String
+    Description: Email address to receive GuardDuty notifications
+
+Resources:
+  GuardDutyQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-guardduty-queue'
+
+  GuardDutyQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt GuardDutyQueue.Arn
+      Queues:
+        - !Ref GuardDutyQueue
+
+  GuardDutyEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "EventRule for GuardDuty"
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt GuardDutyQueue.Arn
+          Id: GuardDutyEventRuleTarget
+
+  GuardDutyProcessingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt GuardDutyProcessingFunctionRole.Arn
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref GuardDutyNotificationTopic
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import logging
+          from botocore.exceptions import ClientError
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          bedrock = boto3.client('bedrock-runtime')
+          sns = boto3.client('sns')
+          SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+
+          def handler(event, context):
+              logger.info(f"Received event: {json.dumps(event)}")
+
+              for record in event['Records']:
+                  message = json.loads(record['body'])
+                  logger.info(f"Processing message: {json.dumps(message)}")
+                  
+                  # Extract account ID and finding ID from the message
+                  account_id = message.get('account', 'Unknown Account')
+                  finding_id = message.get('id', 'Unknown Finding ID')
+                  region = message.get('region', 'Unknown Region')
+                  
+                  # Prepare the prompt for Bedrock
+                  prompt = f"""Human: Summarize the following GuardDuty finding for AWS Account {account_id} and suggest potential steps for resolution. 
+                  Please format your response in the following sections:
+                  1. Finding Overview
+                  2. Potential Impact
+                  3. Recommended Actions
+
+                  Here's the finding:
+
+                  {json.dumps(message, indent=2)}
+
+                  Assistant: Here's a summary of the GuardDuty finding for AWS Account {account_id} and suggested steps for resolution:"""
+                  
+                  try:
+                      logger.info("Invoking Bedrock with Claude 3.5 Sonnet model")
+                      # Invoke Bedrock with Claude 3.5 Sonnet
+                      response = bedrock.invoke_model(
+                          modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+                          body=json.dumps({
+                              "anthropic_version": "bedrock-2023-05-31",
+                              "max_tokens": 1000,
+                              "messages": [
+                                  {
+                                      "role": "user",
+                                      "content": prompt
+                                  }
+                              ],
+                              "temperature": 0.5,
+                              "top_p": 1,
+                              "top_k": 250
+                          })
+                      )
+                      
+                      summary = json.loads(response['body'].read())['content'][0]['text']
+                      logger.info(f"Generated summary: {summary}")
+                      
+                      # Format the email
+                      email_body = f"""
+          GuardDuty Finding Summary and Recommendations
+
+          Account ID: {account_id}
+          Finding ID: {finding_id}
+          Region: {region}
+
+          {summary}
+
+          For more details, please check the AWS GuardDuty console.
+
+          This is an automated message. Please do not reply to this email.
+          """
+                      
+                      logger.info(f"Sending summary to SNS topic: {SNS_TOPIC_ARN}")
+                      # Send email using SNS
+                      sns.publish(
+                          TopicArn=SNS_TOPIC_ARN,
+                          Subject=f'GuardDuty Alert: Finding Summary for Account {account_id}',
+                          Message=email_body
+                      )
+                      logger.info("Summary sent successfully")
+
+                  except ClientError as e:
+                      logger.error(f"Error processing GuardDuty finding: {e}")
+                  except json.JSONDecodeError as e:
+                      logger.error(f"Error decoding JSON: {e}")
+                  except KeyError as e:
+                      logger.error(f"Key error in response: {e}")
+                  except Exception as e:
+                      logger.error(f"Unexpected error: {e}")
+
+              logger.info("Finished processing all records")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Processing completed successfully')
+              }
+
+      Runtime: python3.9
+      Timeout: 30
+
+  GuardDutyProcessingFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockSNSAndSQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - sns:Publish
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: '*'
+
+  GuardDutyNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-guardduty-notifications'
+
+  GuardDutyNotificationTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref GuardDutyNotificationTopic
+      Protocol: email
+      Endpoint: !Ref EmailAddress
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt GuardDutyQueue.Arn
+      FunctionName: !Ref GuardDutyProcessingFunction
+      BatchSize: 1
+
+Outputs:
+  GuardDutyQueueUrl:
+    Description: The URL of the SQS queue for GuardDuty notifications
+    Value: !Ref GuardDutyQueue
+  GuardDutyQueueArn:
+    Description: The ARN of the SQS queue for GuardDuty notifications
+    Value: !GetAtt GuardDutyQueue.Arn
+  GuardDutyNotificationTopicArn:
+    Description: The ARN of the SNS topic for GuardDuty notifications
+    Value: !Ref GuardDutyNotificationTopic

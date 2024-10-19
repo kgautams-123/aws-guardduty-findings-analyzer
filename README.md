@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project provides an automated solution for processing AWS GuardDuty findings using Amazon Bedrock's Claude 3.5 Sonnet model. It summarizes GuardDuty alerts and provides recommended actions, delivering the results via email.
+This project provides an automated solution for processing AWS GuardDuty findings using Amazon Bedrock's Claude 3 Sonnet model. It summarizes GuardDuty alerts and provides recommended actions, delivering the results via email.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ The solution consists of the following AWS components:
 1. Amazon EventBridge: Captures GuardDuty findings
 2. Amazon SQS: Queues the findings for processing
 3. AWS Lambda: Processes the findings using Amazon Bedrock
-4. Amazon Bedrock: Analyzes and summarizes the findings using the Claude 3.5 Sonnet model
+4. Amazon Bedrock: Analyzes and summarizes the findings using the Claude 3 Sonnet model
 5. Amazon SNS: Sends email notifications with the summarized findings
 
 ![Architecture Diagram](Architecture.png)
@@ -19,7 +19,7 @@ The solution consists of the following AWS components:
 
 - An AWS account with permissions to create and manage the required services
 - AWS CLI installed and configured
-- Access to Amazon Bedrock and the Claude 3.5 Sonnet model
+- Access to Amazon Bedrock and the Claude 3 Sonnet model
 
 ## Deployment
 
@@ -48,7 +48,7 @@ The solution consists of the following AWS components:
 1. When GuardDuty generates a finding, it triggers an EventBridge rule.
 2. The rule sends the finding to an SQS queue.
 3. The Lambda function is invoked by messages in the SQS queue.
-4. The Lambda function uses Amazon Bedrock's Claude 3.5 Sonnet model to analyze and summarize the finding.
+4. The Lambda function uses Amazon Bedrock's Claude 3 Sonnet model to analyze and summarize the finding.
 5. The summarized finding, along with recommended actions, is sent via email using Amazon SNS.
 
 ## Customization

@@ -31,7 +31,7 @@ The solution consists of the following AWS components:
 
 2. Deploy the CloudFormation stack:
    ```
-   aws cloudformation create-stack --stack-name guardduty-findings-analyzer --template-body file://guardduty_findings.yml --parameters ParameterKey=EmailAddress,ParameterValue=your-email@example.com --capabilities CAPABILITY_IAM
+   aws cloudformation create-stack --stack-name guardduty-findings-analyzer --template-body file://guardduty_findings_analyzer.yml --parameters ParameterKey=EmailAddress,ParameterValue=your-email@example.com --capabilities CAPABILITY_IAM
    ```
 
    Replace `your-email@example.com` with the email address where you want to receive the GuardDuty finding summaries.
@@ -56,7 +56,7 @@ The solution consists of the following AWS components:
 You can modify the `guardduty_findings.yml` file to adjust the Lambda function code, change the Bedrock model, or alter the email format. After making changes, update the CloudFormation stack:
 
 ```
-aws cloudformation update-stack --stack-name guardduty-findings-analyzer --template-body file://guardduty_findings.yml --parameters ParameterKey=EmailAddress,ParameterValue=your-email@example.com --capabilities CAPABILITY_IAM
+aws cloudformation update-stack --stack-name guardduty-findings-analyzer --template-body file://guardduty_findings_analyzer.yml --parameters ParameterKey=EmailAddress,ParameterValue=your-email@example.com --capabilities CAPABILITY_IAM
 ```
 
 ## Cleanup
